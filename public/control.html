@@ -2,164 +2,135 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TTS Control</title>
+    <title>Пульт управления TTS</title>
     <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: #f0f2f5;
-            color: #1c1e21;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-        }
-        .container {
-            background: #fff;
-            padding: 2rem;
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-            width: 90%;
-            max-width: 500px;
-            text-align: center;
-        }
-        h1 {
-            font-size: 1.5rem;
-            margin-bottom: 1.5rem;
-        }
-        textarea {
-            width: 100%;
-            min-height: 100px;
-            padding: 0.5rem;
-            border: 1px solid #ddd;
-            border-radius: 6px;
-            font-size: 1rem;
-            margin-bottom: 1rem;
-            box-sizing: border-box;
-        }
-        button {
-            width: 100%;
-            padding: 0.75rem;
-            font-size: 1rem;
-            font-weight: bold;
-            color: #fff;
-            background-color: #007bff;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            transition: background-color 0.2s;
-        }
-        button:disabled {
-            background-color: #a0cffc;
-            cursor: not-allowed;
-        }
-        button:hover:not(:disabled) {
-            background-color: #0056b3;
-        }
-        #status {
-            margin-top: 1rem;
-            font-size: 0.9rem;
-            color: #606770;
-        }
+        /* Стили остаются такими же, как в прошлый раз */
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #282c34; color: #f0f0f0; margin: 20px; }
+        .container { max-width: 600px; margin: auto; background-color: #3a3f4b; padding: 25px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        h1 { text-align: center; color: #61dafb; margin-top: 0; }
+        textarea, input[type="password"], select { width: 100%; box-sizing: border-box; padding: 10px; font-size: 16px; border-radius: 5px; border: 1px solid #555; background-color: #333; color: #f0f0f0; margin-bottom: 15px; }
+        button { width: 100%; padding: 12px 20px; font-size: 16px; border: none; border-radius: 5px; cursor: pointer; background-color: #61dafb; color: #282c34; font-weight: bold; transition: background-color 0.2s; }
+        button:disabled { background-color: #555; cursor: not-allowed; }
+        #status { text-align: center; margin-top: 15px; font-style: italic; min-height: 20px; font-weight: bold; }
+        .connected { color: #4CAF50; } .disconnected { color: #f44336; } .processing { color: #f3d964; }
     </style>
 </head>
 <body>
-
     <div class="container">
-        <h1>Панель управления Text-to-Speech</h1>
-        <textarea id="text-to-speak" placeholder="Введите текст для озвучивания..."></textarea>
-        <button id="speak-button" disabled>Отправить</button>
-        <div id="status">Подключение к серверу...</div>
+        <h1>Пульт управления</h1>
+        <p id="status" class="disconnected">Подключение к серверу...</p>
+        
+        <label for="secret-key">Секретный ключ:</label>
+        <input type="password" id="secret-key" placeholder="Введите ваш ключ">
+        
+        <label for="text-to-speak">Текст для озвучки:</label>
+        <textarea id="text-to-speak" placeholder="Введите текст здесь..." rows="4"></textarea>
+        
+        <label for="voice-select">Голос:</label>
+        <select id="voice-select"><option value="">Загрузка голосов...</option></select>
+        
+        <button id="speak-button" disabled>Воспроизвести на стриме</button>
     </div>
 
     <script>
-        // Получаем доступ к элементам на странице
+        // ... (весь скрипт из предыдущего ответа остается здесь)
+        // Копируем весь <script> блок из предыдущего ответа, но изменяем обработчик кнопки:
         const statusDiv = document.getElementById('status');
-        const speakButton = document.getElementById('speak-button');
         const textInput = document.getElementById('text-to-speak');
+        const keyInput = document.getElementById('secret-key');
+        const voiceSelect = document.getElementById('voice-select');
+        const speakButton = document.getElementById('speak-button');
 
-        // Объявляем переменную для WebSocket
-        let ws;
-
-        // --- ГЛАВНАЯ ФУНКЦИЯ ПОДКЛЮЧЕНИЯ ---
-        function connect() {
-            // --- ЭТО ИЗМЕНЕННЫЙ БЛОК КОДА ---
-            // Он динамически создает правильный URL для WebSocket
-
-            // 1. Определяем протокол (wss:// для https://, ws:// для http://)
-            const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
-
-            // 2. Получаем хост (домен) из адресной строки браузера.
-            //    На вашем сайте это будет "stream-tts-app.onrender.com"
-            const host = window.location.host;
-
-            // 3. Укажите путь, на котором ваш сервер слушает WebSocket-соединения.
-            //    Это самый важный параметр для проверки!
-            //    Если ваш серверный код ожидает подключения по адресу /ws или /socket,
-            //    измените значение ниже.
-            const path = '/'; // <--- ПРОВЕРЬТЕ ЭТОТ ПУТЬ В КОНФИГУРАЦИИ ВАШЕГО СЕРВЕРА!
-
-            // 4. Собираем полный URL
-            const ws_url = protocol + host + path;
-
-            // Выводим в консоль для отладки
-            console.log("Попытка подключения к WebSocket по адресу:", ws_url);
-            statusDiv.textContent = `Подключение к ${ws_url}...`;
-            
-            // --- КОНЕЦ ИЗМЕНЕННОГО БЛОКА ---
-
-            // Создаем новый объект WebSocket
-            ws = new WebSocket(ws_url);
-
-            // Обработчик события: соединение успешно установлено
-            ws.onopen = function(event) {
-                console.log("Соединение WebSocket установлено.");
-                statusDiv.textContent = "Соединение установлено. Готов к работе.";
-                speakButton.disabled = false; // Делаем кнопку активной
-            };
-
-            // Обработчик события: получено сообщение от сервера
-            ws.onmessage = function(event) {
-                console.log("Получено сообщение от сервера:", event.data);
-                // Здесь вы можете обрабатывать сообщения от сервера (например, статус задачи)
-                statusDiv.textContent = `Ответ сервера: ${event.data}`;
-            };
-
-            // Обработчик события: соединение закрыто
-            ws.onclose = function(event) {
-                console.log("Соединение WebSocket закрыто. Код:", event.code, "Причина:", event.reason);
-                statusDiv.textContent = "Соединение потеряно. Попытка переподключения через 5 секунд...";
-                speakButton.disabled = true; // Делаем кнопку неактивной
-                // Попытка переподключения через 5 секунд
-                setTimeout(connect, 5000);
-            };
-
-            // Обработчик события: произошла ошибка
-            ws.onerror = function(error) {
-                console.error("Ошибка WebSocket:", error);
-                statusDiv.textContent = "Произошла ошибка соединения.";
-                speakButton.disabled = true;
-            };
+        // Логика загрузки голосов (остается без изменений)
+        let voices = [];
+        function populateVoiceList() {
+            voices = window.speechSynthesis.getVoices();
+            console.log('Попытка получить голоса. Найдено:', voices.length); // Лог для отладки
+            if (voices.length > 0) {
+                voiceSelect.innerHTML = '';
+                let hasRussianVoices = false;
+                voices.forEach((voice) => {
+                    if(voice.lang.includes('ru')) {
+                        hasRussianVoices = true;
+                        const option = document.createElement('option');
+                        option.textContent = `${voice.name} (${voice.lang})`;
+                        option.setAttribute('data-name', voice.name);
+                        voiceSelect.appendChild(option);
+                    }
+                });
+                if (!hasRussianVoices) {
+                     voiceSelect.innerHTML = '<option value="">Русские голоса не найдены</option>';
+                }
+                if (voiceCheckInterval) clearInterval(voiceCheckInterval);
+            }
+        }
+        populateVoiceList();
+        const voiceCheckInterval = setInterval(() => { if (voices.length === 0) populateVoiceList(); else clearInterval(voiceCheckInterval); }, 250);
+        if (window.speechSynthesis.onvoiceschanged !== undefined) {
+            window.speechSynthesis.onvoiceschanged = populateVoiceList;
         }
 
-        // Обработчик клика по кнопке
-        speakButton.addEventListener('click', function() {
-            const text = textInput.value;
-            if (text && ws && ws.readyState === WebSocket.OPEN) {
-                console.log("Отправка текста на сервер:", text);
-                ws.send(text);
-                statusDiv.textContent = "Текст отправлен на обработку...";
-            } else {
-                console.log("Не удалось отправить. Текст пустой или нет соединения.");
-                statusDiv.textContent = "Ошибка: введите текст или проверьте соединение.";
-            }
-        });
-
-        // --- ЗАПУСК ---
-        // Вызываем функцию connect() при загрузке страницы, чтобы установить соединение
+        // Логика WebSocket (остается без изменений)
+        const socketUrl = location.protocol === 'https:' ? 'wss://' : 'ws://' + location.host;
+        let ws;
+        function connect() {
+            ws = new WebSocket(socketUrl);
+            ws.onopen = () => {
+                statusDiv.textContent = 'Подключено к серверу';
+                statusDiv.className = 'connected';
+                speakButton.disabled = false;
+            };
+            ws.onclose = () => {
+                statusDiv.textContent = 'Отключено. Переподключение...';
+                statusDiv.className = 'disconnected';
+                speakButton.disabled = true;
+                setTimeout(connect, 3000); 
+            };
+            ws.onerror = (err) => {
+                statusDiv.textContent = 'Ошибка подключения!';
+                statusDiv.className = 'disconnected';
+                speakButton.disabled = true;
+                ws.close();
+            };
+        }
         connect();
 
+        // ИЗМЕНЕННАЯ ЛОГИКА КНОПКИ
+        speakButton.addEventListener('click', () => {
+            const text = textInput.value;
+            const key = keyInput.value;
+            const selectedOption = voiceSelect.selectedOptions[0]?.getAttribute('data-name');
+            
+            if (!text || !key) {
+                alert('Пожалуйста, введите текст и секретный ключ.');
+                return;
+            }
+             if (!selectedOption) {
+                alert('Голос не выбран. Проверьте, поддерживает ли ваш браузер русские голоса.');
+                return;
+            }
+
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'speak',
+                    text: text,
+                    voiceName: selectedOption,
+                    key: key
+                }));
+                // Показываем статус отправки
+                statusDiv.textContent = 'Текст отправлен на обработку...';
+                statusDiv.className = 'processing';
+                // Возвращаем статус "Подключено" через пару секунд
+                setTimeout(() => {
+                    if (ws.readyState === WebSocket.OPEN) {
+                        statusDiv.textContent = 'Подключено к серверу';
+                        statusDiv.className = 'connected';
+                    }
+                }, 2500);
+            } else {
+                alert('Нет подключения к серверу. Пожалуйста, подождите.');
+            }
+        });
     </script>
 </body>
 </html>

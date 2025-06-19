@@ -3,66 +3,68 @@
 <head>
     <meta charset="UTF-8">
     <title>OBS Audio Source</title>
-    <style>
-        /* Эта страница должна быть полностью прозрачной в OBS */
-        body { background-color: transparent; }
-    </style>
+    <style>body { background-color: transparent; }</style>
 </head>
 <body>
     <script>
         const synth = window.speechSynthesis;
         let voices = [];
         
-        // Получаем голоса, чтобы можно было выбрать нужный по имени
         function populateVoiceList() {
             voices = synth.getVoices();
+            if (voices.length > 0) {
+                console.log('OBS Source: Голоса загружены. Найдено:', voices.length);
+                if(voiceCheckInterval) clearInterval(voiceCheckInterval);
+            }
         }
         populateVoiceList();
+        const voiceCheckInterval = setInterval(() => { if (voices.length === 0) populateVoiceList(); else clearInterval(voiceCheckInterval); }, 250);
         if (synth.onvoiceschanged !== undefined) {
             synth.onvoiceschanged = populateVoiceList;
         }
 
-        // Подключаемся к серверу через WebSocket
         const socketUrl = location.protocol === 'https:' ? 'wss://' : 'ws://' + location.host;
         let ws;
 
         function connect() {
             ws = new WebSocket(socketUrl);
-
             ws.onopen = () => console.log('OBS Source: Connected to server.');
-            ws.onclose = () => {
-                console.log('OBS Source: Disconnected. Reconnecting...');
-                setTimeout(connect, 3000);
-            };
-            ws.onerror = (err) => {
-                console.error('OBS Source WebSocket Error:', err);
-                ws.close();
-            };
-
-            // Самое главное: слушаем сообщения от сервера
+            ws.onclose = () => setTimeout(connect, 3000);
             ws.onmessage = (event) => {
                 const data = JSON.parse(event.data);
+                console.log("OBS Source: Получено сообщение от сервера:", data); // Лог для отладки
                 if (data.type === 'play') {
-                    console.log(`OBS Source: Received text to speak: "${data.text}"`);
                     speak(data.text, data.voiceName);
                 }
             };
         }
-
         connect();
         
-        function speak(text, voiceName) {
+        // --- УЛУЧШЕННАЯ ФУНКЦИЯ ОЗВУЧКИ ---
+        function speak(text, requestedVoiceName) {
             if (synth.speaking) {
-                // Можно поставить в очередь или просто игнорировать
-                console.warn('Synth is already speaking. Ignoring new request.');
+                console.warn('OBS Source: Синтезатор уже говорит. Новая фраза отменена.');
                 return;
             }
             if (text) {
                 const utterThis = new SpeechSynthesisUtterance(text);
-                const selectedVoice = voices.find(voice => voice.name === voiceName);
-                if (selectedVoice) {
-                    utterThis.voice = selectedVoice;
+                
+                // Ищем запрошенный голос
+                let chosenVoice = voices.find(voice => voice.name === requestedVoiceName);
+
+                // Если запрошенный голос не найден, ищем ПЕРВЫЙ попавшийся русский
+                if (!chosenVoice) {
+                    console.warn(`OBS Source: Голос "${requestedVoiceName}" не найден. Ищем любой русский голос.`);
+                    chosenVoice = voices.find(voice => voice.lang.includes('ru'));
                 }
+
+                // Если и русского голоса нет, браузер использует голос по умолчанию
+                if (!chosenVoice) {
+                    console.error("OBS Source: Не найдено русских голосов. Будет использован голос по умолчанию.");
+                }
+
+                utterThis.voice = chosenVoice;
+                console.log('OBS Source: Воспроизведение голосом:', chosenVoice ? chosenVoice.name : 'Default');
                 synth.speak(utterThis);
             }
         }
