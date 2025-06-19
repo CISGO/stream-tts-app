@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>OBS Audio Source</title>
+    <style>
+        /* Эта страница должна быть полностью прозрачной в OBS */
+        body { background-color: transparent; }
+    </style>
+</head>
+<body>
+    <script>
+        const synth = window.speechSynthesis;
+        let voices = [];
+        
+        // Получаем голоса, чтобы можно было выбрать нужный по имени
+        function populateVoiceList() {
+            voices = synth.getVoices();
+        }
+        populateVoiceList();
+        if (synth.onvoiceschanged !== undefined) {
+            synth.onvoiceschanged = populateVoiceList;
+        }
+
+        // Подключаемся к серверу через WebSocket
+        const socketUrl = location.protocol === 'https:' ? 'wss://' : 'ws://' + location.host;
+        let ws;
+
+        function connect() {
+            ws = new WebSocket(socketUrl);
+
+            ws.onopen = () => console.log('OBS Source: Connected to server.');
+            ws.onclose = () => {
+                console.log('OBS Source: Disconnected. Reconnecting...');
+                setTimeout(connect, 3000);
+            };
+            ws.onerror = (err) => {
+                console.error('OBS Source WebSocket Error:', err);
+                ws.close();
+            };
+
+            // Самое главное: слушаем сообщения от сервера
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                if (data.type === 'play') {
+                    console.log(`OBS Source: Received text to speak: "${data.text}"`);
+                    speak(data.text, data.voiceName);
+                }
+            };
+        }
+
+        connect();
+        
+        function speak(text, voiceName) {
+            if (synth.speaking) {
+                // Можно поставить в очередь или просто игнорировать
+                console.warn('Synth is already speaking. Ignoring new request.');
+                return;
+            }
+            if (text) {
+                const utterThis = new SpeechSynthesisUtterance(text);
+                const selectedVoice = voices.find(voice => voice.name === voiceName);
+                if (selectedVoice) {
+                    utterThis.voice = selectedVoice;
+                }
+                synth.speak(utterThis);
+            }
+        }
+    </script>
+</body>
+</html>
