@@ -4,19 +4,21 @@
     <meta charset="UTF-8">
     <title>Пульт управления TTS</title>
     <style>
-        body { font-family: sans-serif; background-color: #282c34; color: #f0f0f0; margin: 20px; }
-        .container { max-width: 600px; margin: auto; background-color: #3a3f4b; padding: 25px; border-radius: 10px; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #282c34; color: #f0f0f0; margin: 20px; }
+        .container { max-width: 600px; margin: auto; background-color: #3a3f4b; padding: 25px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
         h1 { text-align: center; color: #61dafb; margin-top: 0; }
         textarea, input[type="password"], select { width: 100%; box-sizing: border-box; padding: 10px; font-size: 16px; border-radius: 5px; border: 1px solid #555; background-color: #333; color: #f0f0f0; margin-bottom: 15px; }
-        button { width: 100%; padding: 12px 20px; font-size: 16px; border: none; border-radius: 5px; cursor: pointer; background-color: #61dafb; color: #282c34; font-weight: bold; }
-        #status { text-align: center; margin-top: 15px; font-style: italic; min-height: 20px; }
+        button { width: 100%; padding: 12px 20px; font-size: 16px; border: none; border-radius: 5px; cursor: pointer; background-color: #61dafb; color: #282c34; font-weight: bold; transition: background-color 0.2s; }
+        button:hover { background-color: #7ae1ff; }
+        button:disabled { background-color: #555; cursor: not-allowed; }
+        #status { text-align: center; margin-top: 15px; font-style: italic; min-height: 20px; font-weight: bold; }
         .connected { color: #4CAF50; } .disconnected { color: #f44336; }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Пульт управления</h1>
-        <p id="status" class="disconnected">Подключение...</p>
+        <p id="status" class="disconnected">Подключение к серверу...</p>
         
         <label for="secret-key">Секретный ключ:</label>
         <input type="password" id="secret-key" placeholder="Введите ваш ключ">
@@ -25,9 +27,11 @@
         <textarea id="text-to-speak" placeholder="Введите текст здесь..." rows="4"></textarea>
         
         <label for="voice-select">Голос:</label>
-        <select id="voice-select"></select>
+        <select id="voice-select">
+            <option value="">Загрузка голосов...</option>
+        </select>
         
-        <button id="speak-button">Воспроизвести на стриме</button>
+        <button id="speak-button" disabled>Воспроизвести на стриме</button>
     </div>
 
     <script>
@@ -37,7 +41,48 @@
         const voiceSelect = document.getElementById('voice-select');
         const speakButton = document.getElementById('speak-button');
 
-        // Определяем адрес для WebSocket. Он должен быть безопасным (wss://) на Render
+        // --- УЛУЧШЕННАЯ ЛОГИКА ЗАГРУЗКИ ГОЛОСОВ ---
+        let voices = [];
+        function populateVoiceList() {
+            voices = window.speechSynthesis.getVoices();
+            if (voices.length > 0) {
+                voiceSelect.innerHTML = ''; // Очищаем старый список
+                let hasRussianVoices = false;
+                voices.forEach((voice) => {
+                    if(voice.lang.includes('ru')) {
+                        hasRussianVoices = true;
+                        const option = document.createElement('option');
+                        option.textContent = `${voice.name} (${voice.lang})`;
+                        option.setAttribute('data-name', voice.name);
+                        voiceSelect.appendChild(option);
+                    }
+                });
+                if (!hasRussianVoices) {
+                     voiceSelect.innerHTML = '<option value="">Русские голоса не найдены</option>';
+                }
+                // Если мы дождались голосов, перестаем проверять
+                if (voiceCheckInterval) {
+                    clearInterval(voiceCheckInterval);
+                }
+            }
+        }
+        
+        populateVoiceList();
+        // Если голоса не загрузились сразу, будем проверять каждые 100 мс
+        const voiceCheckInterval = setInterval(() => {
+            if (voices.length === 0) {
+                populateVoiceList();
+            } else {
+                clearInterval(voiceCheckInterval);
+            }
+        }, 100);
+
+        // Дополнительно вешаем обработчик на стандартное событие
+        if (window.speechSynthesis.onvoiceschanged !== undefined) {
+            window.speechSynthesis.onvoiceschanged = populateVoiceList;
+        }
+
+        // --- УЛУЧШЕННАЯ ЛОГИКА ПОДКЛЮЧЕНИЯ WEBSOCKET ---
         const socketUrl = location.protocol === 'https:' ? 'wss://' : 'ws://' + location.host;
         let ws;
 
@@ -47,50 +92,39 @@
             ws.onopen = () => {
                 statusDiv.textContent = 'Подключено к серверу';
                 statusDiv.className = 'connected';
+                speakButton.disabled = false; // Включаем кнопку после успешного подключения
             };
 
             ws.onclose = () => {
-                statusDiv.textContent = 'Отключено. Пытаюсь переподключиться...';
+                statusDiv.textContent = 'Отключено. Переподключение через 3 сек...';
                 statusDiv.className = 'disconnected';
-                setTimeout(connect, 3000); // Попытка переподключения через 3 сек
+                speakButton.disabled = true; // Выключаем кнопку при потере соединения
+                setTimeout(connect, 3000); 
             };
 
             ws.onerror = (err) => {
-                statusDiv.textContent = 'Ошибка WebSocket!';
+                statusDiv.textContent = 'Ошибка подключения!';
                 statusDiv.className = 'disconnected';
+                speakButton.disabled = true;
                 console.error('WebSocket Error:', err);
-                ws.close();
+                ws.close(); // Закрываем соединение, onclose вызовет переподключение
             };
         }
         
-        connect();
+        connect(); // Запускаем первое подключение
 
-        // Заполняем список голосов (так же, как в прошлый раз)
-        let voices = [];
-        function populateVoiceList() {
-            voices = window.speechSynthesis.getVoices();
-            voiceSelect.innerHTML = '';
-            voices.forEach((voice) => {
-                if(voice.lang.includes('ru')) {
-                    const option = document.createElement('option');
-                    option.textContent = `${voice.name} (${voice.lang})`;
-                    option.setAttribute('data-name', voice.name);
-                    voiceSelect.appendChild(option);
-                }
-            });
-        }
-        populateVoiceList();
-        if (window.speechSynthesis.onvoiceschanged !== undefined) {
-            window.speechSynthesis.onvoiceschanged = populateVoiceList;
-        }
-
+        // --- ЛОГИКА КНОПКИ ---
         speakButton.addEventListener('click', () => {
             const text = textInput.value;
             const key = keyInput.value;
-            const selectedOption = voiceSelect.selectedOptions[0].getAttribute('data-name');
+            const selectedOption = voiceSelect.selectedOptions[0]?.getAttribute('data-name');
             
             if (!text || !key) {
                 alert('Пожалуйста, введите текст и секретный ключ.');
+                return;
+            }
+             if (!selectedOption) {
+                alert('Пожалуйста, подождите загрузки голосов или выберите голос.');
                 return;
             }
 
@@ -101,9 +135,8 @@
                     voiceName: selectedOption,
                     key: key
                 }));
-                textInput.value = ''; // Очищаем поле после отправки
             } else {
-                alert('Нет подключения к серверу.');
+                alert('Нет подключения к серверу. Пожалуйста, подождите.');
             }
         });
     </script>
