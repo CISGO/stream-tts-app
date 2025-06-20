@@ -4,7 +4,7 @@ const WebSocket = require('ws');
 const path = require('path');
 
 const PORT = process.env.PORT || 3000;
-const SECRET_KEY = "PASTAR"; // Можете задать любой ключ
+const SECRET_KEY = "ВАШ_СЕКРЕТНЫЙ_КЛЮЧ"; // Можете задать любой ключ
 
 const app = express();
 app.use(express.static(path.join(__dirname, 'public')));
