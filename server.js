@@ -4,14 +4,12 @@ const WebSocket = require('ws');
 const path = require('path');
 
 const PORT = process.env.PORT || 3000;
-// Получаем секретные пути из переменных окружения Render.com
 const OBS_SECRET_PATH = process.env.OBS_SECRET_PATH || '/obs-widget-default';
 const ADMIN_SECRET_PATH = process.env.ADMIN_SECRET_PATH || '/admin-panel-default';
 
 const app = express();
 app.use(express.static(path.join(__dirname, 'public')));
 
-// --- Маршрутизация страниц ---
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'control.html')));
 app.get(OBS_SECRET_PATH, (req, res) => res.sendFile(path.join(__dirname, 'public', 'obs.html')));
 app.get(ADMIN_SECRET_PATH, (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
@@ -19,7 +17,6 @@ app.get(ADMIN_SECRET_PATH, (req, res) => res.sendFile(path.join(__dirname, 'publ
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-// --- Состояние сервера ---
 let queue = [];
 let history = [];
 let nowPlaying = null;
@@ -29,21 +26,20 @@ const obsClients = new Set();
 const controlClients = new Set();
 const adminClients = new Set();
 
-console.log('Сервер запущен с админ-панелью.');
-console.log(`Админка доступна по адресу: ${ADMIN_SECRET_PATH}`);
-console.log(`Виджет для OBS доступен по адресу: ${OBS_SECRET_PATH}`);
+console.log('Сервер запущен с обновленной админ-панелью.');
 
-// Функция для рассылки обновлений состояния всем админам
 function broadcastState() {
-    const state = JSON.stringify({
-        queue,
-        history: history.slice(-20), // Отправляем последние 20 для экономии трафика
-        nowPlaying
-    });
+    const combinedList = [];
+    if (nowPlaying) {
+        combinedList.push({ ...nowPlaying, status: 'playing' });
+    }
+    queue.forEach(msg => combinedList.push({ ...msg, status: 'queued' }));
+    history.slice(-20).reverse().forEach(msg => combinedList.push({ ...msg, status: msg.status || 'played' }));
+    
+    const state = JSON.stringify({ messages: combinedList });
     adminClients.forEach(client => client.send(state));
 }
 
-// Главная функция обработки очереди
 function processQueue() {
     if (isSpeaking || queue.length === 0) {
         return;
@@ -51,51 +47,37 @@ function processQueue() {
     isSpeaking = true;
     nowPlaying = queue.shift();
 
-    // Отправляем команду на озвучку только клиентам OBS
-    obsClients.forEach(client => client.send(JSON.stringify({
-        type: 'play',
-        ...nowPlaying
-    })));
-
-    broadcastState(); // Обновляем состояние для админки
+    obsClients.forEach(client => client.send(JSON.stringify({ type: 'play', ...nowPlaying })));
+    broadcastState();
 }
 
 wss.on('connection', (ws, req) => {
-    // Разделяем клиентов по URL при подключении
-    if (req.url.startsWith(OBS_SECRET_PATH)) {
-        obsClients.add(ws);
-        console.log('Клиент OBS подключился');
-    } else if (req.url.startsWith(ADMIN_SECRET_PATH)) {
+    if (req.url.startsWith(OBS_SECRET_PATH)) obsClients.add(ws);
+    else if (req.url.startsWith(ADMIN_SECRET_PATH)) {
         adminClients.add(ws);
-        console.log('Клиент админ-панели подключился');
-        ws.send(JSON.stringify({ queue, history: history.slice(-20), nowPlaying }));
-    } else {
-        controlClients.add(ws);
-        console.log('Клиент пульта управления подключился');
+        broadcastState(); // Отправляем начальное состояние новому админу
     }
+    else controlClients.add(ws);
 
     ws.on('message', (message) => {
         try {
             const data = JSON.parse(message);
 
             switch (data.type) {
-                // Сообщение от пульта
                 case 'speak':
                     if (controlClients.has(ws)) {
-                        const newMessage = {
+                        queue.push({
                             id: Date.now(),
                             sender: data.sender,
                             text: data.text,
                             voiceName: data.voiceName,
                             timestamp: new Date().toLocaleTimeString('ru-RU')
-                        };
-                        queue.push(newMessage);
+                        });
                         processQueue();
                         broadcastState();
                     }
                     break;
 
-                // Сообщение от OBS, что озвучка закончена
                 case 'speech_finished':
                     if (obsClients.has(ws) && nowPlaying) {
                         history.push(nowPlaying);
@@ -106,16 +88,32 @@ wss.on('connection', (ws, req) => {
                     }
                     break;
                 
-                // Сообщение от админки на пропуск
-                case 'skip_current':
-                    if (adminClients.has(ws) && nowPlaying) {
-                        nowPlaying.status = 'пропущено';
-                        history.push(nowPlaying);
-                        nowPlaying = null;
-                        isSpeaking = false;
-                        obsClients.forEach(client => client.send(JSON.stringify({ type: 'stop' })));
-                        processQueue();
-                        broadcastState();
+                // ОБНОВЛЕНО: Единая команда для пропуска
+                case 'skip_message':
+                    if (adminClients.has(ws) && data.id) {
+                        const messageId = data.id;
+                        let skippedMessage = null;
+
+                        // Если это текущее сообщение
+                        if (nowPlaying && nowPlaying.id === messageId) {
+                            skippedMessage = nowPlaying;
+                            nowPlaying = null;
+                            isSpeaking = false;
+                            obsClients.forEach(client => client.send(JSON.stringify({ type: 'stop' })));
+                            processQueue();
+                        } else {
+                            // Ищем в очереди
+                            const index = queue.findIndex(msg => msg.id === messageId);
+                            if (index > -1) {
+                                skippedMessage = queue.splice(index, 1)[0];
+                            }
+                        }
+
+                        if (skippedMessage) {
+                            skippedMessage.status = 'skipped';
+                            history.push(skippedMessage);
+                            broadcastState();
+                        }
                     }
                     break;
             }
@@ -126,7 +124,6 @@ wss.on('connection', (ws, req) => {
         obsClients.delete(ws);
         adminClients.delete(ws);
         controlClients.delete(ws);
-        console.log('Клиент отключился');
     });
 });
 

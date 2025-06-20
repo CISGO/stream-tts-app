@@ -11,7 +11,7 @@
         button { width: 100%; padding: 12px 20px; font-size: 16px; border: none; border-radius: 5px; cursor: pointer; background-color: #61dafb; color: #282c34; font-weight: bold; transition: background-color 0.2s; }
         button:disabled { background-color: #555; cursor: not-allowed; }
         #status { text-align: center; margin-top: 15px; font-style: italic; min-height: 20px; font-weight: bold; }
-        .connected { color: #4CAF50; } .disconnected { color: #f44336; } .processing { color: #f3d964; }
+        .connected { color: #4CAF50; } .disconnected { color: #f44336; }
     </style>
 </head>
 <body>
@@ -19,8 +19,8 @@
         <h1>Пульт управления</h1>
         <p id="status" class="disconnected">Подключение...</p>
         
-        <label for="sender-name">Имя отправителя:</label>
-        <input type="text" id="sender-name" placeholder="Введите имя...">
+        <label for="sender-name">Имя отправителя (сохраняется):</label>
+        <input type="text" id="sender-name" placeholder="Ваше имя...">
 
         <label for="text-to-speak">Текст сообщения:</label>
         <textarea id="text-to-speak" placeholder="Введите текст здесь..." rows="4"></textarea>
@@ -38,7 +38,19 @@
         const voiceSelect = document.getElementById('voice-select');
         const speakButton = document.getElementById('speak-button');
 
-        // Логика загрузки голосов с форматированием имени
+        // --- Сохранение и загрузка имени ---
+        function saveName() {
+            localStorage.setItem('ttsSenderName', senderInput.value);
+        }
+        function loadName() {
+            const savedName = localStorage.getItem('ttsSenderName');
+            if (savedName) {
+                senderInput.value = savedName;
+            }
+        }
+        senderInput.addEventListener('input', saveName);
+        
+        // --- Загрузка голосов ---
         function populateVoiceList() {
             const voices = window.speechSynthesis.getVoices();
             if (voices.length > 0) {
@@ -46,7 +58,6 @@
                 voices.forEach((voice) => {
                     if(voice.lang.includes('ru-') || voice.lang.includes('en-')) {
                         const option = document.createElement('option');
-                        // Форматируем имя: убираем 'Microsoft' и 'Google', оставляем язык
                         option.textContent = `${voice.name.replace('Microsoft ', '').replace('Google ', '')} (${voice.lang})`;
                         option.setAttribute('data-name', voice.name);
                         voiceSelect.appendChild(option);
@@ -58,7 +69,7 @@
             }
         }
 
-        // Логика WebSocket
+        // --- WebSocket ---
         const socketUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host;
         let ws;
         function connect() {
@@ -74,18 +85,18 @@
                 speakButton.disabled = true;
                 setTimeout(connect, 3000); 
             };
-            ws.onerror = (err) => {
+            ws.onerror = () => {
                 statusDiv.textContent = 'Ошибка подключения!';
                 ws.close();
             };
         }
 
-        // Логика кнопки
+        // --- Кнопка отправки ---
         speakButton.addEventListener('click', () => {
             const sender = senderInput.value;
             const text = textInput.value;
             const selectedOption = voiceSelect.selectedOptions[0]?.getAttribute('data-name');
-            if (!sender || !text) { alert('Введите имя отправителя и текст сообщения.'); return; }
+            if (!sender || !text) { alert('Введите имя и текст.'); return; }
             if (!selectedOption) { alert('Голос не выбран.'); return; }
 
             if (ws && ws.readyState === WebSocket.OPEN) {
@@ -95,15 +106,12 @@
                     text: text,
                     voiceName: selectedOption
                 }));
-                // Очищаем поля после успешной отправки
-                textInput.value = ''; 
-                senderInput.value = '';
-            } else {
-                alert('Нет подключения к серверу.');
+                textInput.value = ''; // Очищаем только поле текста
             }
         });
         
-        // --- ЗАПУСК ВСЕЙ ЛОГИКИ ---
+        // --- Запускаем все при загрузке страницы ---
+        loadName();
         connect();
         populateVoiceList();
         if (speechSynthesis.onvoiceschanged !== undefined) {

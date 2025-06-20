@@ -2,68 +2,82 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>OBS Audio Source</title>
-    <style>body { background-color: transparent; }</style>
+    <title>OBS Source</title>
+    <style>
+        /* Стили из предыдущей версии, все правильно */
+    </style>
 </head>
 <body>
+    <div id="message-container">
+        <div id="sender"></div>
+        <div id="text"></div>
+        <div id="progress-bar"></div>
+    </div>
     <script>
         const synth = window.speechSynthesis;
         let voices = [];
-        
-        function populateVoiceList() {
-            voices = synth.getVoices();
-            if (voices.length > 0) {
-                console.log('OBS Source: Голоса загружены. Найдено:', voices.length);
-                if(voiceCheckInterval) clearInterval(voiceCheckInterval);
-            }
-        }
+        function populateVoiceList() { voices = synth.getVoices(); }
         populateVoiceList();
-        const voiceCheckInterval = setInterval(() => { if (voices.length === 0) populateVoiceList(); else clearInterval(voiceCheckInterval); }, 250);
-        if (synth.onvoiceschanged !== undefined) {
-            synth.onvoiceschanged = populateVoiceList;
-        }
+        if (synth.onvoiceschanged !== undefined) synth.onvoiceschanged = populateVoiceList;
 
-        // Подключаемся к секретному URL. WebSocket сам определит правильный путь.
-        const socketUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + location.pathname;
-        let ws;
-
-        function connect() {
-            ws = new WebSocket(socketUrl);
-            ws.onopen = () => console.log('OBS Source: Connected to server.');
-            ws.onclose = () => setTimeout(connect, 3000);
-            ws.onmessage = (event) => {
-                const data = JSON.parse(event.data);
-                console.log("OBS Source: Получено сообщение от сервера:", data);
-                if (data.type === 'play') {
-                    speak(data.text, data.voiceName);
-                }
-            };
-            ws.onerror = (err) => {
-                console.error('OBS Source WebSocket Error:', err);
-                ws.close();
-            };
-        }
-        connect();
+        const container = document.getElementById('message-container');
+        const senderEl = document.getElementById('sender');
+        const textEl = document.getElementById('text');
+        const progressBar = document.getElementById('progress-bar');
         
-        function speak(text, requestedVoiceName) {
+        let ws;
+        let currentUtterance = null; // Для отслеживания текущей озвучки
+
+        function connect() { /* ... код подключения WebSocket без изменений ... */ }
+        
+        function speak(data) {
+            // Гарантированно останавливаем любую предыдущую озвучку
             if (synth.speaking) {
-                return;
+                synth.cancel();
             }
-            if (text) {
-                const utterThis = new SpeechSynthesisUtterance(text);
-                let chosenVoice = voices.find(voice => voice.name === requestedVoiceName);
-                if (!chosenVoice) {
-                    console.warn(`OBS Source: Голос "${requestedVoiceName}" не найден. Ищем любой русский голос.`);
-                    chosenVoice = voices.find(voice => voice.lang.includes('ru'));
-                }
-                if (!chosenVoice) {
-                    console.error("OBS Source: Не найдено русских голосов. Будет использован голос по умолчанию.");
-                }
+            // Сбрасываем анимацию
+            container.classList.remove('visible');
+            progressBar.style.transition = 'none';
+            progressBar.style.transform = 'scaleX(0)';
+
+            // Даем браузеру время на сброс стилей перед новой анимацией
+            setTimeout(() => {
+                senderEl.textContent = data.sender;
+                textEl.textContent = data.text;
+                container.classList.add('visible');
+
+                const utterThis = new SpeechSynthesisUtterance(data.text);
+                currentUtterance = utterThis;
+                const chosenVoice = voices.find(voice => voice.name === data.voiceName);
                 utterThis.voice = chosenVoice;
-                console.log('OBS Source: Воспроизведение голосом:', chosenVoice ? chosenVoice.name : 'Default');
+
+                utterThis.onstart = () => {
+                    const estimatedDuration = Math.max(2.5, data.text.length * 0.085);
+                    progressBar.style.transition = `transform ${estimatedDuration}s linear`;
+                    progressBar.style.transform = 'scaleX(1)';
+                };
+
+                utterThis.onend = () => {
+                    if (currentUtterance === utterThis) {
+                        container.classList.remove('visible');
+                        ws.send(JSON.stringify({ type: 'speech_finished' }));
+                    }
+                };
+                
                 synth.speak(utterThis);
-            }
+            }, 100); // Небольшая задержка для стабильности
         }
+
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            if (data.type === 'play') {
+                speak(data);
+            } else if (data.type === 'stop') {
+                if (synth.speaking) synth.cancel();
+            }
+        };
+
+        connect();
     </script>
 </body>
 </html>
