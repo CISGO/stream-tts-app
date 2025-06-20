@@ -4,7 +4,13 @@
     <meta charset="UTF-8">
     <title>OBS Source</title>
     <style>
-        /* Стили из предыдущей версии, все правильно */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
+        body { background-color: transparent; font-family: 'Inter', sans-serif; margin: 0; padding: 0; overflow: hidden; }
+        #message-container { position: fixed; bottom: 50px; left: 50px; right: 50px; background-color: rgba(20, 20, 30, 0.85); color: #ffffff; padding: 25px; border-radius: 15px; border-top: 5px solid #61dafb; box-shadow: 0 0 30px rgba(0, 0, 0, 0.5); transform: translateY(200%); opacity: 0; transition: transform 0.5s ease-in-out, opacity 0.5s ease-in-out; }
+        #message-container.visible { transform: translateY(0); opacity: 1; }
+        #sender { font-size: 32px; font-weight: 700; color: #61dafb; margin-bottom: 10px; }
+        #text { font-size: 28px; font-weight: 400; line-height: 1.4; }
+        #progress-bar { position: absolute; bottom: 0; left: 0; height: 5px; width: 100%; background-color: #ffc107; transform-origin: left; transform: scaleX(0); }
     </style>
 </head>
 <body>
@@ -16,31 +22,63 @@
     <script>
         const synth = window.speechSynthesis;
         let voices = [];
-        function populateVoiceList() { voices = synth.getVoices(); }
-        populateVoiceList();
-        if (synth.onvoiceschanged !== undefined) synth.onvoiceschanged = populateVoiceList;
-
         const container = document.getElementById('message-container');
         const senderEl = document.getElementById('sender');
         const textEl = document.getElementById('text');
         const progressBar = document.getElementById('progress-bar');
         
         let ws;
-        let currentUtterance = null; // Для отслеживания текущей озвучки
+        let currentUtterance = null;
 
-        function connect() { /* ... код подключения WebSocket без изменений ... */ }
+        function populateVoiceList() {
+             // Ждем, пока голоса точно загрузятся
+            voices = synth.getVoices();
+            if (voices.length === 0) {
+                setTimeout(populateVoiceList, 100);
+            }
+        }
+
+        function connect() {
+            const socketUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + location.pathname;
+            ws = new WebSocket(socketUrl);
+
+            // ИСПРАВЛЕНО: Все обработчики назначаются ПОСЛЕ создания ws
+            ws.onopen = () => console.log('OBS Source: Connected.');
+            
+            ws.onclose = () => {
+                console.log('OBS Source: Disconnected. Reconnecting...');
+                setTimeout(connect, 3000);
+            };
+
+            ws.onerror = (err) => {
+                console.error('OBS Source WebSocket Error:', err);
+                ws.close();
+            };
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                console.log('OBS Source: Received data:', data);
+                if (data.type === 'play') {
+                    speak(data);
+                } else if (data.type === 'stop') {
+                    // Агрессивно сбрасываем все, если пришла команда stop
+                    currentUtterance = null;
+                    synth.cancel();
+                    container.classList.remove('visible');
+                }
+            };
+        }
         
         function speak(data) {
-            // Гарантированно останавливаем любую предыдущую озвучку
-            if (synth.speaking) {
-                synth.cancel();
-            }
-            // Сбрасываем анимацию
+            // Агрессивно отменяем любую предыдущую речь, чтобы избежать зависаний
+            synth.cancel();
+            
+            // Сбрасываем анимацию перед показом нового сообщения
             container.classList.remove('visible');
             progressBar.style.transition = 'none';
             progressBar.style.transform = 'scaleX(0)';
 
-            // Даем браузеру время на сброс стилей перед новой анимацией
+            // Даем браузеру мгновение на перерисовку
             setTimeout(() => {
                 senderEl.textContent = data.sender;
                 textEl.textContent = data.text;
@@ -49,8 +87,12 @@
                 const utterThis = new SpeechSynthesisUtterance(data.text);
                 currentUtterance = utterThis;
                 const chosenVoice = voices.find(voice => voice.name === data.voiceName);
-                utterThis.voice = chosenVoice;
-
+                if (chosenVoice) {
+                    utterThis.voice = chosenVoice;
+                } else {
+                    console.warn(`Voice "${data.voiceName}" not found in OBS browser.`);
+                }
+                
                 utterThis.onstart = () => {
                     const estimatedDuration = Math.max(2.5, data.text.length * 0.085);
                     progressBar.style.transition = `transform ${estimatedDuration}s linear`;
@@ -58,25 +100,19 @@
                 };
 
                 utterThis.onend = () => {
+                    // Убеждаемся, что мы завершаем правильное сообщение, а не старое
                     if (currentUtterance === utterThis) {
-                        container.classList.remove('visible');
                         ws.send(JSON.stringify({ type: 'speech_finished' }));
+                        container.classList.remove('visible');
                     }
                 };
                 
                 synth.speak(utterThis);
-            }, 100); // Небольшая задержка для стабильности
+            }, 100);
         }
 
-        ws.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            if (data.type === 'play') {
-                speak(data);
-            } else if (data.type === 'stop') {
-                if (synth.speaking) synth.cancel();
-            }
-        };
-
+        // Запускаем все
+        populateVoiceList();
         connect();
     </script>
 </body>

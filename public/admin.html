@@ -4,167 +4,33 @@
     <meta charset="UTF-8">
     <title>Админ-панель TTS</title>
     <style>
-        body { 
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; 
-            background-color: #1e1e2e; 
-            color: #cdd6f4; 
-            padding: 20px; 
-            margin: 0;
-        }
-        .container { 
-            max-width: 800px; 
-            margin: auto; 
-            background-color: #181825; 
-            padding: 20px; 
-            border-radius: 10px; 
-            border: 1px solid #313244; 
-        }
-        h2 { 
-            margin-top: 0; 
-            color: #89b4fa; 
-            border-bottom: 2px solid #89b4fa; 
-            padding-bottom: 10px; 
-        }
-        .message-item { 
-            background-color: #313244; 
-            padding: 12px; 
-            border-radius: 8px; 
-            margin-bottom: 10px; 
-            border-left: 4px solid; 
-            transition: background-color 0.3s, opacity 0.3s; 
-        }
-        /* Стили для статусов */
-        .message-item.status-playing { 
-            border-left-color: #a6e3a1; /* Зеленый - играет */
-            background-color: #45475a; 
-        }
-        .message-item.status-queued { 
-            border-left-color: #f9e2af; /* Желтый - в очереди */
-        }
-        .message-item.status-played { 
-            border-left-color: #6c7086; /* Серый - проиграно */
-            opacity: 0.6; 
-        }
-        .message-item.status-skipped { 
-            border-left-color: #f38ba8; /* Красный - пропущено */
-            opacity: 0.5; 
-            text-decoration: line-through;
-        }
-        .meta { 
-            display: flex; 
-            justify-content: space-between; 
-            align-items: center; 
-            font-size: 12px; 
-            color: #a6adc8; 
-            margin-bottom: 5px; 
-        }
-        .meta strong { 
-            color: #f5c2e7; 
-            font-size: 14px;
-        }
-        .text { 
-            font-size: 16px; 
-            word-wrap: break-word; 
-            color: #cdd6f4; 
-        }
-        .skip-button { 
-            background-color: #f38ba8; 
-            color: #1e1e2e; 
-            border: none; 
-            padding: 5px 10px; 
-            border-radius: 5px; 
-            cursor: pointer; 
-            font-weight: bold; 
-            transition: background-color 0.2s;
-        }
-        .skip-button:hover { 
-            background-color: #eba0ac; 
-        }
-        .placeholder { 
-            color: #6c7086; 
-            text-align: center; 
-            padding: 20px; 
-            font-style: italic;
-        }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #1e1e2e; color: #cdd6f4; padding: 20px; margin: 0; }
+        .container { max-width: 800px; margin: auto; background-color: #181825; padding: 20px; border-radius: 10px; border: 1px solid #313244; }
+        h2 { margin-top: 0; color: #89b4fa; border-bottom: 2px solid #89b4fa; padding-bottom: 10px; }
+        .message-item { background-color: #313244; padding: 12px; border-radius: 8px; margin-bottom: 10px; border-left: 4px solid; transition: background-color 0.3s, opacity 0.3s; }
+        .message-item.status-playing { border-left-color: #a6e3a1; background-color: #45475a; }
+        .message-item.status-queued { border-left-color: #f9e2af; }
+        .message-item.status-played { border-left-color: #6c7086; opacity: 0.6; }
+        .message-item.status-skipped { border-left-color: #f38ba8; opacity: 0.5; text-decoration: line-through; }
+        .meta { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: #a6adc8; margin-bottom: 5px; }
+        .meta strong { color: #f5c2e7; font-size: 14px; }
+        .text { font-size: 16px; word-wrap: break-word; color: #cdd6f4; }
+        .skip-button { background-color: #f38ba8; color: #1e1e2e; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer; font-weight: bold; transition: background-color 0.2s; }
+        .skip-button:hover { background-color: #eba0ac; }
+        .placeholder { color: #6c7086; text-align: center; padding: 20px; font-style: italic; }
     </style>
 </head>
 <body>
     <div class="container">
         <h2>Последние сообщения</h2>
-        <div id="messages-list">
-            <p class="placeholder">Подключение к серверу...</p>
-        </div>
+        <div id="messages-list"><p class="placeholder">Подключение к серверу...</p></div>
     </div>
-
     <script>
         const messagesList = document.getElementById('messages-list');
         let ws;
-
-        function connect() {
-            // Подключаемся к секретному URL админки
-            const socketUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + location.pathname;
-            ws = new WebSocket(socketUrl);
-
-            ws.onopen = () => {
-                console.log('Admin: Connected to server.');
-                messagesList.innerHTML = '<p class="placeholder">Ожидание сообщений...</p>';
-            };
-
-            ws.onclose = () => {
-                console.log('Admin: Disconnected. Reconnecting...');
-                messagesList.innerHTML = '<p class="placeholder">Переподключение к серверу...</p>';
-                setTimeout(connect, 3000);
-            };
-
-            ws.onmessage = (event) => {
-                const state = JSON.parse(event.data);
-                renderState(state);
-            };
-
-            ws.onerror = (err) => {
-                console.error('Admin WebSocket Error:', err);
-                ws.close();
-            };
-        }
-        
-        function renderState(state) {
-            messagesList.innerHTML = '';
-            if (!state.messages || state.messages.length === 0) {
-                messagesList.innerHTML = '<p class="placeholder">Сообщений пока нет</p>';
-                return;
-            }
-
-            state.messages.forEach(msg => {
-                const item = document.createElement('div');
-                item.className = `message-item status-${msg.status}`;
-                
-                let buttonHtml = '';
-                // Добавляем кнопку "Пропустить" для играющих и тех, кто в очереди
-                if (msg.status === 'playing' || msg.status === 'queued') {
-                    buttonHtml = `<button class="skip-button" data-id="${msg.id}">Пропустить</button>`;
-                }
-
-                item.innerHTML = `
-                    <div class="meta">
-                        <span><strong>${msg.sender}</strong> - ${msg.timestamp}</span>
-                        ${buttonHtml}
-                    </div>
-                    <div class="text">${msg.text}</div>
-                `;
-                messagesList.appendChild(item);
-            });
-        }
-
-        // Используем делегирование событий, чтобы кнопки работали даже после обновления списка
-        messagesList.addEventListener('click', function(event) {
-            if (event.target && event.target.classList.contains('skip-button')) {
-                const messageId = parseInt(event.target.getAttribute('data-id'));
-                if (ws && ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({ type: 'skip_message', id: messageId }));
-                }
-            }
-        });
-
+        function connect() { const socketUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + location.pathname; ws = new WebSocket(socketUrl); ws.onopen = () => { console.log('Admin: Connected.'); messagesList.innerHTML = '<p class="placeholder">Ожидание сообщений...</p>'; }; ws.onclose = () => { console.log('Admin: Disconnected. Reconnecting...'); setTimeout(connect, 3000); }; ws.onmessage = (event) => { const state = JSON.parse(event.data); renderState(state); }; ws.onerror = (err) => { console.error('Admin WebSocket Error:', err); ws.close(); }; }
+        function renderState(state) { messagesList.innerHTML = ''; if (!state.messages || state.messages.length === 0) { messagesList.innerHTML = '<p class="placeholder">Сообщений пока нет</p>'; return; } state.messages.forEach(msg => { const item = document.createElement('div'); item.className = `message-item status-${msg.status}`; let buttonHtml = ''; if (msg.status === 'playing' || msg.status === 'queued') { buttonHtml = `<button class="skip-button" data-id="${msg.id}">Пропустить</button>`; } item.innerHTML = `<div class="meta"><span><strong>${msg.sender}</strong> - ${msg.timestamp}</span>${buttonHtml}</div><div class="text">${msg.text}</div>`; messagesList.appendChild(item); }); }
+        messagesList.addEventListener('click', function(event) { if (event.target && event.target.classList.contains('skip-button')) { const messageId = parseInt(event.target.getAttribute('data-id')); if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'skip_message', id: messageId })); } });
         connect();
     </script>
 </body>

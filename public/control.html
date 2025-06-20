@@ -18,105 +18,25 @@
     <div class="container">
         <h1>Пульт управления</h1>
         <p id="status" class="disconnected">Подключение...</p>
-        
         <label for="sender-name">Имя отправителя (сохраняется):</label>
         <input type="text" id="sender-name" placeholder="Ваше имя...">
-
         <label for="text-to-speak">Текст сообщения:</label>
         <textarea id="text-to-speak" placeholder="Введите текст здесь..." rows="4"></textarea>
-        
         <label for="voice-select">Голос:</label>
         <select id="voice-select"><option value="">Загрузка голосов...</option></select>
-        
         <button id="speak-button" disabled>Отправить в очередь</button>
     </div>
-
     <script>
-        const statusDiv = document.getElementById('status');
-        const senderInput = document.getElementById('sender-name');
-        const textInput = document.getElementById('text-to-speak');
-        const voiceSelect = document.getElementById('voice-select');
-        const speakButton = document.getElementById('speak-button');
-
-        // --- Сохранение и загрузка имени ---
-        function saveName() {
-            localStorage.setItem('ttsSenderName', senderInput.value);
-        }
-        function loadName() {
-            const savedName = localStorage.getItem('ttsSenderName');
-            if (savedName) {
-                senderInput.value = savedName;
-            }
-        }
+        const statusDiv = document.getElementById('status'), senderInput = document.getElementById('sender-name'), textInput = document.getElementById('text-to-speak'), voiceSelect = document.getElementById('voice-select'), speakButton = document.getElementById('speak-button');
+        function saveName() { localStorage.setItem('ttsSenderName', senderInput.value); }
+        function loadName() { const savedName = localStorage.getItem('ttsSenderName'); if (savedName) senderInput.value = savedName; }
         senderInput.addEventListener('input', saveName);
-        
-        // --- Загрузка голосов ---
-        function populateVoiceList() {
-            const voices = window.speechSynthesis.getVoices();
-            if (voices.length > 0) {
-                voiceSelect.innerHTML = '';
-                voices.forEach((voice) => {
-                    if(voice.lang.includes('ru-') || voice.lang.includes('en-')) {
-                        const option = document.createElement('option');
-                        option.textContent = `${voice.name.replace('Microsoft ', '').replace('Google ', '')} (${voice.lang})`;
-                        option.setAttribute('data-name', voice.name);
-                        voiceSelect.appendChild(option);
-                    }
-                });
-                if (voiceSelect.innerHTML === '') {
-                     voiceSelect.innerHTML = '<option value="">Подходящие голоса не найдены</option>';
-                }
-            }
-        }
-
-        // --- WebSocket ---
+        function populateVoiceList() { const voices = window.speechSynthesis.getVoices(); if (voices.length > 0) { voiceSelect.innerHTML = ''; voices.forEach((voice) => { if(voice.lang.includes('ru-') || voice.lang.includes('en-')) { const option = document.createElement('option'); option.textContent = `${voice.name.replace('Microsoft ', '').replace('Google ', '')} (${voice.lang})`; option.setAttribute('data-name', voice.name); voiceSelect.appendChild(option); } }); if (voiceSelect.innerHTML === '') voiceSelect.innerHTML = '<option value="">Подходящие голоса не найдены</option>'; } }
         const socketUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host;
         let ws;
-        function connect() {
-            ws = new WebSocket(socketUrl);
-            ws.onopen = () => {
-                statusDiv.textContent = 'Подключено';
-                statusDiv.className = 'connected';
-                speakButton.disabled = false;
-            };
-            ws.onclose = () => {
-                statusDiv.textContent = 'Отключено. Переподключение...';
-                statusDiv.className = 'disconnected';
-                speakButton.disabled = true;
-                setTimeout(connect, 3000); 
-            };
-            ws.onerror = () => {
-                statusDiv.textContent = 'Ошибка подключения!';
-                ws.close();
-            };
-        }
-
-        // --- Кнопка отправки ---
-        speakButton.addEventListener('click', () => {
-            const sender = senderInput.value;
-            const text = textInput.value;
-            const selectedOption = voiceSelect.selectedOptions[0]?.getAttribute('data-name');
-            if (!sender || !text) { alert('Введите имя и текст.'); return; }
-            if (!selectedOption) { alert('Голос не выбран.'); return; }
-
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({
-                    type: 'speak',
-                    sender: sender,
-                    text: text,
-                    voiceName: selectedOption
-                }));
-                textInput.value = ''; // Очищаем только поле текста
-            }
-        });
-        
-        // --- Запускаем все при загрузке страницы ---
-        loadName();
-        connect();
-        populateVoiceList();
-        if (speechSynthesis.onvoiceschanged !== undefined) {
-            speechSynthesis.onvoiceschanged = populateVoiceList;
-        }
+        function connect() { ws = new WebSocket(socketUrl); ws.onopen = () => { statusDiv.textContent = 'Подключено'; statusDiv.className = 'connected'; speakButton.disabled = false; }; ws.onclose = () => { statusDiv.textContent = 'Отключено. Переподключение...'; statusDiv.className = 'disconnected'; speakButton.disabled = true; setTimeout(connect, 3000); }; ws.onerror = () => { statusDiv.textContent = 'Ошибка подключения!'; ws.close(); }; }
+        speakButton.addEventListener('click', () => { const sender = senderInput.value, text = textInput.value, selectedOption = voiceSelect.selectedOptions[0]?.getAttribute('data-name'); if (!sender || !text) { alert('Введите имя и текст.'); return; } if (!selectedOption) { alert('Голос не выбран.'); return; } if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: 'speak', sender: sender, text: text, voiceName: selectedOption })); textInput.value = ''; } });
+        loadName(); connect(); populateVoiceList(); if (speechSynthesis.onvoiceschanged !== undefined) speechSynthesis.onvoiceschanged = populateVoiceList;
     </script>
 </body>
 </html>

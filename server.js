@@ -26,7 +26,7 @@ const obsClients = new Set();
 const controlClients = new Set();
 const adminClients = new Set();
 
-console.log('Сервер запущен с обновленной админ-панелью.');
+console.log('Сервер запущен с исправленной логикой.');
 
 function broadcastState() {
     const combinedList = [];
@@ -55,29 +55,21 @@ wss.on('connection', (ws, req) => {
     if (req.url.startsWith(OBS_SECRET_PATH)) obsClients.add(ws);
     else if (req.url.startsWith(ADMIN_SECRET_PATH)) {
         adminClients.add(ws);
-        broadcastState(); // Отправляем начальное состояние новому админу
+        broadcastState();
     }
     else controlClients.add(ws);
 
     ws.on('message', (message) => {
         try {
             const data = JSON.parse(message);
-
             switch (data.type) {
                 case 'speak':
                     if (controlClients.has(ws)) {
-                        queue.push({
-                            id: Date.now(),
-                            sender: data.sender,
-                            text: data.text,
-                            voiceName: data.voiceName,
-                            timestamp: new Date().toLocaleTimeString('ru-RU')
-                        });
+                        queue.push({ id: Date.now(), sender: data.sender, text: data.text, voiceName: data.voiceName, timestamp: new Date().toLocaleTimeString('ru-RU') });
                         processQueue();
                         broadcastState();
                     }
                     break;
-
                 case 'speech_finished':
                     if (obsClients.has(ws) && nowPlaying) {
                         history.push(nowPlaying);
@@ -87,28 +79,21 @@ wss.on('connection', (ws, req) => {
                         broadcastState();
                     }
                     break;
-                
-                // ОБНОВЛЕНО: Единая команда для пропуска
                 case 'skip_message':
                     if (adminClients.has(ws) && data.id) {
                         const messageId = data.id;
                         let skippedMessage = null;
-
-                        // Если это текущее сообщение
                         if (nowPlaying && nowPlaying.id === messageId) {
                             skippedMessage = nowPlaying;
-                            nowPlaying = null;
-                            isSpeaking = false;
+                            nowPlaying = null; isSpeaking = false;
                             obsClients.forEach(client => client.send(JSON.stringify({ type: 'stop' })));
                             processQueue();
                         } else {
-                            // Ищем в очереди
                             const index = queue.findIndex(msg => msg.id === messageId);
                             if (index > -1) {
                                 skippedMessage = queue.splice(index, 1)[0];
                             }
                         }
-
                         if (skippedMessage) {
                             skippedMessage.status = 'skipped';
                             history.push(skippedMessage);
