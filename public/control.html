@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <title>Пульт управления TTS</title>
     <style>
-        /* Стили остаются такими же, как в прошлый раз */
+        /* Стили остаются такими же */
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #282c34; color: #f0f0f0; margin: 20px; }
         .container { max-width: 600px; margin: auto; background-color: #3a3f4b; padding: 25px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
         h1 { text-align: center; color: #61dafb; margin-top: 0; }
@@ -33,19 +33,17 @@
     </div>
 
     <script>
-        // ... (весь скрипт из предыдущего ответа остается здесь)
-        // Копируем весь <script> блок из предыдущего ответа, но изменяем обработчик кнопки:
         const statusDiv = document.getElementById('status');
         const textInput = document.getElementById('text-to-speak');
         const keyInput = document.getElementById('secret-key');
         const voiceSelect = document.getElementById('voice-select');
         const speakButton = document.getElementById('speak-button');
 
-        // Логика загрузки голосов (остается без изменений)
+        // Логика загрузки голосов (работает отлично, не трогаем)
         let voices = [];
         function populateVoiceList() {
             voices = window.speechSynthesis.getVoices();
-            console.log('Попытка получить голоса. Найдено:', voices.length); // Лог для отладки
+            console.log('Попытка получить голоса. Найдено:', voices.length);
             if (voices.length > 0) {
                 voiceSelect.innerHTML = '';
                 let hasRussianVoices = false;
@@ -70,10 +68,15 @@
             window.speechSynthesis.onvoiceschanged = populateVoiceList;
         }
 
-        // Логика WebSocket (остается без изменений)
-        const socketUrl = location.protocol === 'https:' ? 'wss://' : 'ws://' + location.host;
+        // --- ИСПРАВЛЕННАЯ ЛОГИКА ПОДКЛЮЧЕНИЯ WEBSOCKET ---
+        
+        // Было: const socketUrl = location.protocol === 'https:' ? 'wss://' : 'ws://' + location.host; -> ОШИБКА
+        // Стало:
+        const socketUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host;
+        
         let ws;
         function connect() {
+            console.log('Попытка подключения к:', socketUrl); // Добавим лог для проверки
             ws = new WebSocket(socketUrl);
             ws.onopen = () => {
                 statusDiv.textContent = 'Подключено к серверу';
@@ -88,6 +91,7 @@
             };
             ws.onerror = (err) => {
                 statusDiv.textContent = 'Ошибка подключения!';
+                console.error('WebSocket Error:', err); // Выводим ошибку в консоль
                 statusDiv.className = 'disconnected';
                 speakButton.disabled = true;
                 ws.close();
@@ -95,41 +99,24 @@
         }
         connect();
 
-        // ИЗМЕНЕННАЯ ЛОГИКА КНОПКИ
+        // Логика кнопки (не меняем)
         speakButton.addEventListener('click', () => {
             const text = textInput.value;
             const key = keyInput.value;
             const selectedOption = voiceSelect.selectedOptions[0]?.getAttribute('data-name');
-            
-            if (!text || !key) {
-                alert('Пожалуйста, введите текст и секретный ключ.');
-                return;
-            }
-             if (!selectedOption) {
-                alert('Голос не выбран. Проверьте, поддерживает ли ваш браузер русские голоса.');
-                return;
-            }
-
+            if (!text || !key) { alert('Пожалуйста, введите текст и секретный ключ.'); return; }
+            if (!selectedOption) { alert('Голос не выбран. Проверьте, поддерживает ли ваш браузер русские голоса.'); return; }
             if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({
-                    type: 'speak',
-                    text: text,
-                    voiceName: selectedOption,
-                    key: key
-                }));
-                // Показываем статус отправки
+                ws.send(JSON.stringify({ type: 'speak', text: text, voiceName: selectedOption, key: key }));
                 statusDiv.textContent = 'Текст отправлен на обработку...';
                 statusDiv.className = 'processing';
-                // Возвращаем статус "Подключено" через пару секунд
                 setTimeout(() => {
                     if (ws.readyState === WebSocket.OPEN) {
                         statusDiv.textContent = 'Подключено к серверу';
                         statusDiv.className = 'connected';
                     }
                 }, 2500);
-            } else {
-                alert('Нет подключения к серверу. Пожалуйста, подождите.');
-            }
+            } else { alert('Нет подключения к серверу. Пожалуйста, подождите.'); }
         });
     </script>
 </body>
