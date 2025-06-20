@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Админ-панель TTS</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #1e1e2e; color: #cdd6f4; display: flex; gap: 20px; padding: 20px; font-size: 14px; }
+        .column { flex: 1; background-color: #181825; padding: 20px; border-radius: 10px; border: 1px solid #313244; display: flex; flex-direction: column; }
+        h2 { margin-top: 0; color: #89b4fa; border-bottom: 2px solid #89b4fa; padding-bottom: 10px; }
+        .list-container { flex-grow: 1; overflow-y: auto; }
+        .message-item { background-color: #313244; padding: 12px; border-radius: 8px; margin-bottom: 10px; border-left: 4px solid #b4befe; }
+        .message-item .meta { font-size: 12px; color: #a6adc8; margin-bottom: 5px; display: flex; justify-content: space-between; }
+        .message-item .meta strong { color: #f5c2e7; }
+        .message-item .text { font-size: 15px; color: #cdd6f4; word-wrap: break-word; }
+        #now-playing-card .message-item { border-left-color: #a6e3a1; }
+        #now-playing-card .text { font-size: 18px; font-weight: bold; }
+        #skip-button { background-color: #f38ba8; color: #1e1e2e; border: none; padding: 8px 12px; border-radius: 5px; cursor: pointer; font-weight: bold; margin-top: 10px; float: right; }
+        #skip-button:hover { background-color: #eba0ac; }
+        .placeholder { color: #6c7086; }
+    </style>
+</head>
+<body>
+    <div class="column" id="now-playing-column">
+        <h2>▶️ Сейчас играет</h2>
+        <div id="now-playing-card"><p class="placeholder">Тишина...</p></div>
+    </div>
+    <div class="column" id="queue-column">
+        <h2>⏳ Очередь</h2>
+        <div class="list-container" id="queue-list"><p class="placeholder">Пусто</p></div>
+    </div>
+    <div class="column" id="history-column">
+        <h2>📖 История</h2>
+        <div class="list-container" id="history-list"><p class="placeholder">Пусто</p></div>
+    </div>
+
+    <script>
+        const nowPlayingCard = document.getElementById('now-playing-card');
+        const queueList = document.getElementById('queue-list');
+        const historyList = document.getElementById('history-list');
+
+        let ws;
+        function connect() {
+            const socketUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + location.pathname;
+            ws = new WebSocket(socketUrl);
+            ws.onopen = () => console.log('Admin: Connected.');
+            ws.onclose = () => setTimeout(connect, 3000);
+            ws.onmessage = (event) => {
+                const state = JSON.parse(event.data);
+                renderState(state);
+            };
+        }
+        
+        function renderState(state) {
+            // Рендер "Сейчас играет"
+            if (state.nowPlaying) {
+                nowPlayingCard.innerHTML = `
+                    <div class="message-item">
+                        <div class="meta"><span><strong>${state.nowPlaying.sender}</strong></span><span>${state.nowPlaying.timestamp}</span></div>
+                        <div class="text">${state.nowPlaying.text}</div>
+                        <button id="skip-button">Пропустить</button>
+                    </div>`;
+                document.getElementById('skip-button').onclick = () => {
+                    ws.send(JSON.stringify({ type: 'skip_current' }));
+                };
+            } else {
+                nowPlayingCard.innerHTML = `<p class="placeholder">Тишина...</p>`;
+            }
+
+            // Рендер Очереди
+            queueList.innerHTML = '';
+            if (state.queue.length > 0) {
+                state.queue.forEach(msg => {
+                    const el = document.createElement('div');
+                    el.className = 'message-item';
+                    el.innerHTML = `<div class="meta"><span><strong>${msg.sender}</strong></span><span>${msg.timestamp}</span></div><div class="text">${msg.text}</div>`;
+                    queueList.appendChild(el);
+                });
+            } else {
+                queueList.innerHTML = '<p class="placeholder">Пусто</p>';
+            }
+
+            // Рендер Истории
+            historyList.innerHTML = '';
+            if (state.history.length > 0) {
+                state.history.slice().reverse().forEach(msg => { // reverse, чтобы новые были сверху
+                    const el = document.createElement('div');
+                    el.className = 'message-item';
+                    el.style.borderLeftColor = msg.status === 'пропущено' ? '#f38ba8' : '#74c7ec';
+                    el.innerHTML = `<div class="meta"><span><strong>${msg.sender}</strong></span><span>${msg.timestamp}</span></div><div class="text">${msg.text}</div>`;
+                    historyList.appendChild(el);
+                });
+            } else {
+                historyList.innerHTML = '<p class="placeholder">Пусто</p>';
+            }
+        }
+
+        connect();
+    </script>
+</body>
+</html>

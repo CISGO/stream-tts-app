@@ -1,7 +1,7 @@
 {
-  "name": "stream-tts-app-local",
+  "name": "stream-tts-pro",
   "version": "1.0.0",
-  "description": "Browser-based TTS for Streaming",
+  "description": "Advanced TTS with Queue and Admin Panel for Streaming",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
