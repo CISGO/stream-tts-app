@@ -4,7 +4,7 @@ const WebSocket = require('ws');
 const path = require('path');
 
 const PORT = process.env.PORT || 3000;
-const SECRET_KEY = "ВАШ_СЕКРЕТНЫЙ_КЛЮЧ"; // Можете задать любой ключ
+const SECRET_KEY = "PASTAR"; // Убедитесь, что этот ключ совпадает с тем, что вы вводите
 
 const app = express();
 app.use(express.static(path.join(__dirname, 'public')));
@@ -18,11 +18,14 @@ wss.on('connection', (ws) => {
     ws.on('message', (message) => {
         try {
             const data = JSON.parse(message);
+            // ИСПРАВЛЕНО: Теперь сервер слушает правильный тип сообщения 'speak'
             if (data.type === 'speak' && data.key === SECRET_KEY) {
                 console.log(`Получена команда: голос=${data.voiceName}, текст="${data.text}"`);
-                // Просто пересылаем команду всем остальным клиентам (в OBS)
+                
+                // Пересылаем команду всем остальным клиентам (в OBS)
                 wss.clients.forEach((client) => {
                     if (client !== ws && client.readyState === WebSocket.OPEN) {
+                        // Отправляем тип 'play', который ожидает index.html
                         client.send(JSON.stringify({
                             type: 'play',
                             text: data.text,
