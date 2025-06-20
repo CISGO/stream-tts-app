@@ -10,7 +10,6 @@
         const synth = window.speechSynthesis;
         let voices = [];
         
-        // Эта часть работает отлично, не трогаем
         function populateVoiceList() {
             voices = synth.getVoices();
             if (voices.length > 0) {
@@ -24,14 +23,11 @@
             synth.onvoiceschanged = populateVoiceList;
         }
 
-        // --- ИСПРАВЛЕННАЯ ЛОГИКА ПОДКЛЮЧЕНИЯ WEBSOCKET ---
-        // Было: const socketUrl = location.protocol === 'https:' ? 'wss://' : 'ws://' + location.host; -> ОШИБКА
-        // Стало:
-        const socketUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host;
-        
+        // Подключаемся к секретному URL. WebSocket сам определит правильный путь.
+        const socketUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + location.pathname;
         let ws;
+
         function connect() {
-            console.log('OBS Source: Попытка подключения к:', socketUrl);
             ws = new WebSocket(socketUrl);
             ws.onopen = () => console.log('OBS Source: Connected to server.');
             ws.onclose = () => setTimeout(connect, 3000);
@@ -49,10 +45,8 @@
         }
         connect();
         
-        // Функция озвучки (работает отлично, не трогаем)
         function speak(text, requestedVoiceName) {
             if (synth.speaking) {
-                console.warn('OBS Source: Синтезатор уже говорит. Новая фраза отменена.');
                 return;
             }
             if (text) {

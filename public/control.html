@@ -2,9 +2,8 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Пульт управления TTS</title>
+    <title>Пульт управления</title>
     <style>
-        /* Стили остаются такими же */
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #282c34; color: #f0f0f0; margin: 20px; }
         .container { max-width: 600px; margin: auto; background-color: #3a3f4b; padding: 25px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
         h1 { text-align: center; color: #61dafb; margin-top: 0; }
@@ -20,8 +19,7 @@
         <h1>Пульт управления</h1>
         <p id="status" class="disconnected">Подключение к серверу...</p>
         
-        <label for="secret-key">Секретный ключ:</label>
-        <input type="password" id="secret-key" placeholder="Введите ваш ключ">
+        <!-- ПОЛЕ ДЛЯ СЕКРЕТНОГО КЛЮЧА УДАЛЕНО -->
         
         <label for="text-to-speak">Текст для озвучки:</label>
         <textarea id="text-to-speak" placeholder="Введите текст здесь..." rows="4"></textarea>
@@ -35,21 +33,16 @@
     <script>
         const statusDiv = document.getElementById('status');
         const textInput = document.getElementById('text-to-speak');
-        const keyInput = document.getElementById('secret-key');
         const voiceSelect = document.getElementById('voice-select');
         const speakButton = document.getElementById('speak-button');
 
-        // --- ИЗМЕНЕНИЕ ---
-        // Логика загрузки голосов теперь ищет и русские, и английские голоса
+        // Логика загрузки голосов (ищет русские и английские)
         let voices = [];
         function populateVoiceList() {
             voices = window.speechSynthesis.getVoices();
-            console.log('Попытка получить голоса. Найдено:', voices.length);
             if (voices.length > 0) {
-                voiceSelect.innerHTML = ''; // Очищаем список перед заполнением
-                
+                voiceSelect.innerHTML = '';
                 voices.forEach((voice) => {
-                    // Условие изменено: ищем голоса, в языке которых есть 'ru-' ИЛИ 'en-'
                     if(voice.lang.includes('ru-') || voice.lang.includes('en-')) {
                         const option = document.createElement('option');
                         option.textContent = `${voice.name} (${voice.lang})`;
@@ -57,28 +50,22 @@
                         voiceSelect.appendChild(option);
                     }
                 });
-                
-                // Если после цикла список все еще пуст, сообщаем об этом
                 if (voiceSelect.innerHTML === '') {
                     voiceSelect.innerHTML = '<option value="">Подходящие голоса не найдены</option>';
                 }
-
                 if (voiceCheckInterval) clearInterval(voiceCheckInterval);
             }
         }
-        // --- КОНЕЦ ИЗМЕНЕНИЯ ---
-
         populateVoiceList();
         const voiceCheckInterval = setInterval(() => { if (voices.length === 0) populateVoiceList(); else clearInterval(voiceCheckInterval); }, 250);
         if (window.speechSynthesis.onvoiceschanged !== undefined) {
             window.speechSynthesis.onvoiceschanged = populateVoiceList;
         }
 
-        // Логика подключения WebSocket (у вас она уже правильная)
+        // Логика WebSocket
         const socketUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host;
         let ws;
         function connect() {
-            console.log('Попытка подключения к:', socketUrl);
             ws = new WebSocket(socketUrl);
             ws.onopen = () => {
                 statusDiv.textContent = 'Подключено к серверу';
@@ -93,24 +80,20 @@
             };
             ws.onerror = (err) => {
                 statusDiv.textContent = 'Ошибка подключения!';
-                console.error('WebSocket Error:', err);
-                statusDiv.className = 'disconnected';
-                speakButton.disabled = true;
                 ws.close();
             };
         }
         connect();
 
-        // Логика кнопки (остается без изменений)
+        // Логика кнопки (без отправки ключа)
         speakButton.addEventListener('click', () => {
             const text = textInput.value;
-            const key = keyInput.value;
             const selectedOption = voiceSelect.selectedOptions[0]?.getAttribute('data-name');
-            if (!text || !key) { alert('Пожалуйста, введите текст и секретный ключ.'); return; }
-            if (!selectedOption) { alert('Голос не выбран. Проверьте, поддерживает ли ваш браузер голоса.'); return; }
+            if (!text) { alert('Пожалуйста, введите текст.'); return; }
+            if (!selectedOption) { alert('Голос не выбран.'); return; }
 
             if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ type: 'speak', text: text, voiceName: selectedOption, key: key }));
+                ws.send(JSON.stringify({ type: 'speak', text: text, voiceName: selectedOption }));
                 statusDiv.textContent = 'Текст отправлен на обработку...';
                 statusDiv.className = 'processing';
                 setTimeout(() => {
@@ -119,7 +102,7 @@
                         statusDiv.className = 'connected';
                     }
                 }, 2500);
-            } else { alert('Нет подключения к серверу. Пожалуйста, подождите.'); }
+            } else { alert('Нет подключения к серверу.'); }
         });
     </script>
 </body>
