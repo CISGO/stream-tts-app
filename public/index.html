@@ -10,6 +10,7 @@
         const synth = window.speechSynthesis;
         let voices = [];
         
+        // Эта часть работает отлично, не трогаем
         function populateVoiceList() {
             voices = synth.getVoices();
             if (voices.length > 0) {
@@ -23,24 +24,32 @@
             synth.onvoiceschanged = populateVoiceList;
         }
 
-        const socketUrl = location.protocol === 'https:' ? 'wss://' : 'ws://' + location.host;
+        // --- ИСПРАВЛЕННАЯ ЛОГИКА ПОДКЛЮЧЕНИЯ WEBSOCKET ---
+        // Было: const socketUrl = location.protocol === 'https:' ? 'wss://' : 'ws://' + location.host; -> ОШИБКА
+        // Стало:
+        const socketUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host;
+        
         let ws;
-
         function connect() {
+            console.log('OBS Source: Попытка подключения к:', socketUrl);
             ws = new WebSocket(socketUrl);
             ws.onopen = () => console.log('OBS Source: Connected to server.');
             ws.onclose = () => setTimeout(connect, 3000);
             ws.onmessage = (event) => {
                 const data = JSON.parse(event.data);
-                console.log("OBS Source: Получено сообщение от сервера:", data); // Лог для отладки
+                console.log("OBS Source: Получено сообщение от сервера:", data);
                 if (data.type === 'play') {
                     speak(data.text, data.voiceName);
                 }
             };
+            ws.onerror = (err) => {
+                console.error('OBS Source WebSocket Error:', err);
+                ws.close();
+            };
         }
         connect();
         
-        // --- УЛУЧШЕННАЯ ФУНКЦИЯ ОЗВУЧКИ ---
+        // Функция озвучки (работает отлично, не трогаем)
         function speak(text, requestedVoiceName) {
             if (synth.speaking) {
                 console.warn('OBS Source: Синтезатор уже говорит. Новая фраза отменена.');
@@ -48,21 +57,14 @@
             }
             if (text) {
                 const utterThis = new SpeechSynthesisUtterance(text);
-                
-                // Ищем запрошенный голос
                 let chosenVoice = voices.find(voice => voice.name === requestedVoiceName);
-
-                // Если запрошенный голос не найден, ищем ПЕРВЫЙ попавшийся русский
                 if (!chosenVoice) {
                     console.warn(`OBS Source: Голос "${requestedVoiceName}" не найден. Ищем любой русский голос.`);
                     chosenVoice = voices.find(voice => voice.lang.includes('ru'));
                 }
-
-                // Если и русского голоса нет, браузер использует голос по умолчанию
                 if (!chosenVoice) {
                     console.error("OBS Source: Не найдено русских голосов. Будет использован голос по умолчанию.");
                 }
-
                 utterThis.voice = chosenVoice;
                 console.log('OBS Source: Воспроизведение голосом:', chosenVoice ? chosenVoice.name : 'Default');
                 synth.speak(utterThis);
